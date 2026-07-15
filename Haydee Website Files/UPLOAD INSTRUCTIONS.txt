@@ -1,0 +1,22 @@
+HAYDEE WEBSITE - GITHUB PAGES UPLOAD
+
+1. Create a new GitHub repository.
+2. Click Add file, then Upload files.
+3. Upload the CONTENTS of this folder. Keep the assets, media, and models folders intact.
+4. Commit the uploaded files to the main branch.
+5. Open Settings, then Pages.
+6. Choose Deploy from a branch.
+7. Select main and / (root), then click Save.
+
+GitHub will show the website address after deployment finishes.
+
+Required layout:
+
+index.html
+assets/
+media/
+models/
+
+Do not rename any files. GitHub filenames are case-sensitive.
+
+Privacy warning: The passcode is client-side and is not encryption. Anyone with access to a public repository or site can download its models and videos.
