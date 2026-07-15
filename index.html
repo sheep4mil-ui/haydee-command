@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#090b12" />
+    <title>Haydee Command Deck</title>
+    <script type="module" crossorigin src="./assets/index-zbAye4Kx.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-DH1uaSrO.css">
+  </head>
+  <body class="is-locked">
+    <section id="startupLock" class="startup-lock" aria-label="Startup passcode">
+      <form id="startupLockForm" class="startup-lock-card">
+        <p class="eyebrow">HAYDEE // LOCKED</p>
+        <h2>Enter passcode</h2>
+        <input id="startupPasscode" type="password" inputmode="numeric" autocomplete="off" maxlength="4" aria-label="Passcode" autofocus />
+        <button type="submit" class="primary startup-unlock">Unlock</button>
+        <p id="startupLockError" class="startup-lock-error" aria-live="polite"></p>
+      </form>
+    </section>
+    <main id="appShell" class="app-shell" inert aria-hidden="true">
+      <section class="stage" aria-label="3D character viewer">
+        <canvas id="scene"></canvas>
+        <video id="xmodeVideo" class="xmode-video" preload="metadata" playsinline controls loop>
+          <source src="./media/xmode.mp4?v=1" type="video/mp4" />
+        </video>
+        <video id="breastModeVideo" class="xmode-video" preload="metadata" playsinline controls loop>
+          <source src="./media/breast-click-loop.mp4?v=1" type="video/mp4" />
+        </video>
+        <video id="faceModeVideo" class="xmode-video" preload="metadata" playsinline controls loop>
+          <source src="./media/face-click-loop.mp4?v=1" type="video/mp4" />
+        </video>
+        <video id="feetModeVideo" class="xmode-video" preload="metadata" playsinline controls loop>
+          <source src="./media/feet-click-loop.mp4?v=1" type="video/mp4" />
+        </video>
+        <div class="brand">
+          <span class="signal"></span>
+          <span>LOCAL // HAYDEE-01</span>
+        </div>
+        <div class="stage-status" id="stageStatus">Loading character…</div>
+      </section>
+
+      <aside class="console-panel">
+        <header>
+          <p class="eyebrow">Private command interface</p>
+          <h1>Haydee<br />Command Deck</h1>
+          <p class="intro">Type or speak a command. The model stays on this computer.</p>
+        </header>
+
+        <section class="command-card">
+          <div id="chatTranscript" class="chat-transcript is-visible" aria-live="polite"></div>
+          <label for="commandInput">Message or command</label>
+          <div class="command-row">
+            <input id="commandInput" autocomplete="off" placeholder="Chat, or try: walk" />
+            <button id="runCommand" class="primary">Send</button>
+          </div>
+          <button id="voiceCommand" class="voice"><span>●</span> Start listening</button>
+          <button id="voiceReplies" class="voice voice-replies"><span>🔊</span> Voice replies on</button>
+          <label class="voice-picker" for="voiceSelect">Haydee's voice
+            <select id="voiceSelect">
+              <option value="">Loading voices...</option>
+            </select>
+          </label>
+          <div class="ai-status" id="ollamaStatus" data-state="checking">
+            <span class="ai-dot"></span>
+            <span>Checking Ollama...</span>
+            <code>llama3.2</code>
+          </div>
+          <p id="commandResult" class="result" aria-live="polite">Ready.</p>
+        </section>
+
+        <section class="quick-actions" aria-label="Quick commands">
+          <button data-command="squat" data-x-option>Full-body squat</button>
+          <button data-command="walk">Walk</button>
+          <button data-command="jump">Jump</button>
+          <button data-command="blow" data-x-option>Blow</button>
+          <button data-command="idle">Idle</button>
+          <button data-command="reset">Reset</button>
+          <button data-command="turn around">Turn around</button>
+        </section>
+
+        <p class="privacy-note">Voice recognition depends on browser support and may use the browser vendor’s speech service. Typed commands remain local.</p>
+      </aside>
+    </main>
+  </body>
+</html>
