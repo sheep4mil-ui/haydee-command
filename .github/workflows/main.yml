@@ -1,0 +1,1012 @@
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import '../styles.css';
+
+const publicAsset = (path) => `${import.meta.env.BASE_URL}${path.replace(/^\//, '')}`;
+
+const startupLock = document.querySelector('#startupLock');
+const startupLockForm = document.querySelector('#startupLockForm');
+const startupPasscode = document.querySelector('#startupPasscode');
+const startupLockError = document.querySelector('#startupLockError');
+const appShell = document.querySelector('#appShell');
+
+startupLockForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  if (startupPasscode.value !== '3725') {
+    startupPasscode.value = '';
+    startupLockError.textContent = 'Incorrect code.';
+    startupPasscode.focus();
+    return;
+  }
+  startupLock.classList.add('is-unlocked');
+  document.body.classList.remove('is-locked');
+  appShell.removeAttribute('inert');
+  appShell.removeAttribute('aria-hidden');
+  startupPasscode.value = '';
+  startupLockError.textContent = '';
+});
+
+const canvas = document.querySelector('#scene');
+const stage = document.querySelector('.stage');
+const status = document.querySelector('#stageStatus');
+const result = document.querySelector('#commandResult');
+const input = document.querySelector('#commandInput');
+const xmodeVideo = document.querySelector('#xmodeVideo');
+const breastModeVideo = document.querySelector('#breastModeVideo');
+const faceModeVideo = document.querySelector('#faceModeVideo');
+const feetModeVideo = document.querySelector('#feetModeVideo');
+const runButton = document.querySelector('#runCommand');
+const ollamaStatus = document.querySelector('#ollamaStatus');
+const OLLAMA_URL = 'http://127.0.0.1:11434';
+const OLLAMA_MODEL = 'llama3.2:latest';
+let ollamaOnline = false;
+const chatTranscript = document.querySelector('#chatTranscript');
+const chatHistory = [];
+const voiceRepliesButton = document.querySelector('#voiceReplies');
+const voiceSelect = document.querySelector('#voiceSelect');
+let voiceRepliesEnabled = true;
+let haydeeVoice = null;
+let xOptionsVisible = false;
+document.body.classList.add('x-options-off');
+
+function toggleXOptions() {
+  xOptionsVisible = !xOptionsVisible;
+  document.body.classList.toggle('x-options-off', !xOptionsVisible);
+}
+
+function selectHaydeeVoice() {
+  const voices = window.speechSynthesis?.getVoices() || [];
+  if (!voices.length) {
+    voiceSelect.innerHTML = '<option value="">No browser voices available</option>';
+    voiceSelect.disabled = true;
+    return;
+  }
+  voiceSelect.disabled = false;
+  const savedVoice = localStorage.getItem('haydeeVoice') || voiceSelect.value;
+  const preferred = ['jenny', 'aria', 'zira', 'sonia', 'samantha', 'hazel', 'susan'];
+  const automaticVoice = voices.find((voice) => {
+    const name = voice.name.toLowerCase();
+    return name.includes('microsoft') && preferred.some((candidate) => name.includes(candidate));
+  }) || voices.find((voice) => voice.name.toLowerCase().includes('microsoft') && voice.lang.toLowerCase().startsWith('en'))
+    || voices.find((voice) => preferred.some((candidate) => voice.name.toLowerCase().includes(candidate)))
+    || voices.find((voice) => voice.lang.toLowerCase().startsWith('en'))
+    || null;
+  haydeeVoice = voices.find((voice) => voice.name === savedVoice) || automaticVoice;
+  voiceSelect.replaceChildren(...voices
+    .slice()
+    .sort((a, b) => Number(b.lang.toLowerCase().startsWith('en')) - Number(a.lang.toLowerCase().startsWith('en')) || a.name.localeCompare(b.name))
+    .map((voice) => {
+      const option = document.createElement('option');
+      option.value = voice.name;
+      option.textContent = `${voice.name} (${voice.lang})`;
+      return option;
+    }));
+  if (haydeeVoice) voiceSelect.value = haydeeVoice.name;
+}
+
+function speakAsHaydee(text) {
+  if (!voiceRepliesEnabled || !window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  if (haydeeVoice) utterance.voice = haydeeVoice;
+  utterance.rate = 0.96;
+  utterance.pitch = 1.04;
+  utterance.volume = 1;
+  window.speechSynthesis.speak(utterance);
+}
+
+selectHaydeeVoice();
+if (window.speechSynthesis) {
+  window.speechSynthesis.onvoiceschanged = selectHaydeeVoice;
+} else {
+  voiceRepliesButton.disabled = true;
+  voiceRepliesButton.textContent = 'Voice replies unavailable in this browser';
+}
+voiceSelect.addEventListener('change', () => {
+  haydeeVoice = window.speechSynthesis?.getVoices().find((voice) => voice.name === voiceSelect.value) || null;
+  if (haydeeVoice) localStorage.setItem('haydeeVoice', haydeeVoice.name);
+});
+voiceRepliesButton.addEventListener('click', () => {
+  voiceRepliesEnabled = !voiceRepliesEnabled;
+  voiceRepliesButton.classList.toggle('is-off', !voiceRepliesEnabled);
+  voiceRepliesButton.innerHTML = voiceRepliesEnabled
+    ? '<span>🔊</span> Voice replies on'
+    : '<span>🔇</span> Voice replies off';
+  if (!voiceRepliesEnabled) window.speechSynthesis?.cancel();
+});
+
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.15;
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2('#090b12', 0.2);
+
+const camera = new THREE.PerspectiveCamera(35, 1, 0.01, 100);
+camera.position.set(0.17, -0.34, 0.14);
+
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.target.set(0.02, 0.01, 0.047);
+controls.minDistance = 0.11;
+controls.maxDistance = 0.65;
+
+scene.add(new THREE.HemisphereLight('#dce8ff', '#1b102d', 2.1));
+const key = new THREE.DirectionalLight('#fff2e1', 5.5);
+key.position.set(-2, -3, 4);
+scene.add(key);
+const rim = new THREE.DirectionalLight('#7a4dff', 4.5);
+rim.position.set(3, 2, 3);
+scene.add(rim);
+
+const floor = new THREE.Mesh(
+  new THREE.CircleGeometry(0.085, 80),
+  new THREE.MeshStandardMaterial({ color: '#111627', roughness: 0.55, metalness: 0.35 }),
+);
+floor.rotation.x = -Math.PI / 2;
+floor.position.set(0.02, 0.01, -0.001);
+scene.add(floor);
+
+const room = new THREE.Group();
+scene.add(room);
+let animatedFloorGrid = null;
+
+function buildRoom(center, height, floorY) {
+  room.clear();
+  const roomSize = height * 6.5;
+  const roomHeight = height * 4.2;
+  const walls = new THREE.Mesh(
+    new THREE.BoxGeometry(roomSize, roomHeight, roomSize),
+    new THREE.MeshStandardMaterial({
+      color: '#111625',
+      roughness: 0.92,
+      metalness: 0.08,
+      side: THREE.BackSide,
+    }),
+  );
+  walls.position.set(center.x, floorY + roomHeight * 0.48, center.z);
+  room.add(walls);
+
+  const floorGrid = new THREE.GridHelper(roomSize, 28, '#735cff', '#28304c');
+  floorGrid.position.set(center.x, floorY + height * 0.002, center.z);
+  floorGrid.userData.baseZ = center.z;
+  floorGrid.userData.cellSize = roomSize / 28;
+  floorGrid.material.transparent = true;
+  floorGrid.material.opacity = 0.46;
+  room.add(floorGrid);
+  animatedFloorGrid = floorGrid;
+
+  const makeWallGrid = (position, rotation) => {
+    const grid = new THREE.GridHelper(roomSize, 20, '#664dce', '#252c45');
+    grid.position.copy(position);
+    grid.rotation.copy(rotation);
+    grid.material.transparent = true;
+    grid.material.opacity = 0.22;
+    room.add(grid);
+  };
+  makeWallGrid(
+    new THREE.Vector3(center.x, floorY + roomHeight * 0.48, center.z - roomSize * 0.49),
+    new THREE.Euler(Math.PI / 2, 0, 0),
+  );
+  makeWallGrid(
+    new THREE.Vector3(center.x - roomSize * 0.49, floorY + roomHeight * 0.48, center.z),
+    new THREE.Euler(Math.PI / 2, 0, Math.PI / 2),
+  );
+
+  const lightMaterial = new THREE.MeshBasicMaterial({ color: '#f1edff', toneMapped: false, fog: false });
+  const haloMaterial = new THREE.MeshBasicMaterial({
+    color: '#765cff',
+    transparent: true,
+    opacity: 0.5,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    toneMapped: false,
+    fog: false,
+  });
+  const frameMaterial = new THREE.MeshStandardMaterial({ color: '#252b3c', metalness: 0.75, roughness: 0.3 });
+  const addWallLight = (x) => {
+    const fixture = new THREE.Group();
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(height * 0.18, height * 1.3, height * 0.075), frameMaterial);
+    const lamp = new THREE.Mesh(new THREE.BoxGeometry(height * 0.085, height * 1.14, height * 0.085), lightMaterial);
+    const halo = new THREE.Mesh(new THREE.PlaneGeometry(height * 0.32, height * 1.4), haloMaterial);
+    halo.position.z = height * 0.055;
+    lamp.position.z = height * 0.09;
+    fixture.add(frame, halo, lamp);
+    fixture.position.set(x, floorY + height * 1.35, center.z - height * 1.8);
+    room.add(fixture);
+
+    const panelLight = new THREE.PointLight('#8d72ff', 18, height * 5.2, 1.35);
+    panelLight.position.set(x, floorY + height * 1.35, center.z - height * 1.55);
+    room.add(panelLight);
+
+    const beamTarget = new THREE.Object3D();
+    beamTarget.position.set(center.x, floorY + height * 0.9, center.z);
+    room.add(beamTarget);
+    const beam = new THREE.SpotLight('#9b87ff', 32, height * 5.5, Math.PI * 0.28, 0.72, 1.25);
+    beam.position.copy(panelLight.position);
+    beam.target = beamTarget;
+    room.add(beam);
+  };
+  addWallLight(center.x - height * 0.92);
+  addWallLight(center.x + height * 0.92);
+
+  const ceilingFrame = new THREE.Mesh(
+    new THREE.BoxGeometry(height * 1.45, height * 0.055, height * 0.5),
+    frameMaterial,
+  );
+  const ceilingLamp = new THREE.Mesh(
+    new THREE.BoxGeometry(height * 1.25, height * 0.065, height * 0.32),
+    lightMaterial,
+  );
+  ceilingFrame.position.set(center.x, floorY + roomHeight * 0.965, center.z - height * 0.3);
+  ceilingLamp.position.copy(ceilingFrame.position);
+  ceilingLamp.position.y -= height * 0.035;
+  room.add(ceilingFrame, ceilingLamp);
+
+  const glow = new THREE.PointLight('#765cff', 3.2, roomSize * 1.2, 2);
+  glow.position.set(center.x, floorY + height * 1.6, center.z - height * 1.5);
+  room.add(glow);
+  const overheadGlow = new THREE.PointLight('#e5ddff', 12, roomSize * 0.75, 1.5);
+  overheadGlow.position.set(center.x, floorY + roomHeight * 0.86, center.z - height * 0.3);
+  room.add(overheadGlow);
+}
+
+let model;
+let mixer;
+let squatClip;
+let walkClip;
+let jumpClip;
+let twerkClip;
+let activeAction;
+let isSquatting = false;
+let activeMotionMode = 'idle';
+let idleTime = 0;
+let currentFidget = null;
+let nextFidgetAt = 2.5;
+const clock = new THREE.Clock();
+const cameraHome = new THREE.Vector3();
+const targetHome = new THREE.Vector3();
+const modelCenter = new THREE.Vector3();
+const modelBasePosition = new THREE.Vector3();
+let modelHeight = 1;
+const secondaryBones = {};
+const secondaryState = {};
+const buttHitBones = [];
+const breastHitBones = [];
+const faceHitBones = [];
+const feetHitBones = [];
+const idleShoulders = [];
+const idleLegs = {};
+let idleChest = null;
+let usbAccessory = null;
+const motionReferences = { chest: null, hips: null };
+const referenceMotion = {
+  chest: { ready: false, position: new THREE.Vector3(), velocity: new THREE.Vector3(), quaternion: new THREE.Quaternion(), angularVelocity: 0 },
+  hips: { ready: false, position: new THREE.Vector3(), velocity: new THREE.Vector3(), quaternion: new THREE.Quaternion(), angularVelocity: 0 },
+};
+const motionSample = new THREE.Vector3();
+const motionVelocity = new THREE.Vector3();
+const motionQuaternion = new THREE.Quaternion();
+const motionDeltaQuaternion = new THREE.Quaternion();
+const settings = { breast: 0.35, butt: 0.3, stiffness: 0.65, damping: 0.72 };
+const modelRaycaster = new THREE.Raycaster();
+const modelPointer = new THREE.Vector2();
+const hitBoneWorldPosition = new THREE.Vector3();
+const hitBoneScreenPosition = new THREE.Vector3();
+let modelPointerStart = null;
+
+canvas.addEventListener('pointerdown', (event) => {
+  if (event.button !== 0) return;
+  modelPointerStart = { x: event.clientX, y: event.clientY };
+});
+
+canvas.addEventListener('pointerup', (event) => {
+  if (!modelPointerStart || !model || (!buttHitBones.length && !breastHitBones.length && !faceHitBones.length && !feetHitBones.length)) return;
+  const movement = Math.hypot(event.clientX - modelPointerStart.x, event.clientY - modelPointerStart.y);
+  modelPointerStart = null;
+  if (movement > 14 || xmodeVideo.classList.contains('is-visible') || breastModeVideo.classList.contains('is-visible') || faceModeVideo.classList.contains('is-visible') || feetModeVideo.classList.contains('is-visible')) return;
+
+  const rect = canvas.getBoundingClientRect();
+  modelPointer.set(
+    ((event.clientX - rect.left) / rect.width) * 2 - 1,
+    -((event.clientY - rect.top) / rect.height) * 2 + 1,
+  );
+  model.updateMatrixWorld(true);
+  modelRaycaster.setFromCamera(modelPointer, camera);
+  const hit = modelRaycaster.intersectObject(model, true).find((intersection) => intersection.object.isMesh);
+  if (!hit) return;
+
+  let hitNode = hit.object;
+  let hitHeadMesh = false;
+  while (hitNode && hitNode !== model) {
+    if (hitNode.name.trim().toLowerCase().includes('head')) {
+      hitHeadMesh = true;
+      break;
+    }
+    hitNode = hitNode.parent;
+  }
+  const hitHeadHeight = hit.point.y >= modelCenter.y + modelHeight * 0.31;
+  if (hitHeadMesh || hitHeadHeight) { enterFaceMode(); return; }
+
+  const hitsRegion = (bones, radius) => bones.some((bone) => {
+    bone.getWorldPosition(hitBoneWorldPosition);
+    return hit.point.distanceToSquared(hitBoneWorldPosition) <= radius * radius;
+  });
+  const hitsScreenRegion = (bones, pixelRadius) => bones.some((bone) => {
+    bone.getWorldPosition(hitBoneScreenPosition).project(camera);
+    if (hitBoneScreenPosition.z < -1 || hitBoneScreenPosition.z > 1) return false;
+    const boneX = rect.left + (hitBoneScreenPosition.x + 1) * rect.width * 0.5;
+    const boneY = rect.top + (1 - hitBoneScreenPosition.y) * rect.height * 0.5;
+    return Math.hypot(event.clientX - boneX, event.clientY - boneY) <= pixelRadius;
+  });
+  const breastPixelRadius = Math.max(42, rect.height * 0.07);
+  const facePixelRadius = Math.max(46, rect.height * 0.075);
+  const hitFace = hitsRegion(faceHitBones, modelHeight * 0.13)
+    || hitsScreenRegion(faceHitBones, facePixelRadius);
+  if (hitFace) { enterFaceMode(); return; }
+  const feetPixelRadius = Math.max(44, rect.height * 0.07);
+  const hitFeetHeight = hit.point.y <= modelCenter.y - modelHeight * 0.38;
+  const hitFeet = hitFeetHeight
+    || hitsRegion(feetHitBones, modelHeight * 0.14)
+    || hitsScreenRegion(feetHitBones, feetPixelRadius);
+  if (hitFeet) { enterFeetMode(); return; }
+  const hitBreast = hitsRegion(breastHitBones, modelHeight * 0.18)
+    || hitsScreenRegion(breastHitBones, breastPixelRadius);
+  if (hitBreast) { enterBreastMode(); return; }
+  const buttPixelRadius = Math.max(52, rect.height * 0.09);
+  const hitButt = hitsRegion(buttHitBones, modelHeight * 0.16)
+    || hitsScreenRegion(buttHitBones, buttPixelRadius);
+  if (hitButt) enterXMode();
+});
+
+canvas.addEventListener('pointercancel', () => { modelPointerStart = null; });
+
+new GLTFLoader().load(
+  publicAsset('models/haydee_animated.glb?v=weighted-glute-walk-71'),
+  (gltf) => {
+    model = gltf.scene;
+    scene.add(model);
+    modelBasePosition.copy(model.position);
+    model.traverse((node) => {
+      if (node.isMesh) {
+        node.castShadow = true;
+        node.receiveShadow = true;
+        const materials = Array.isArray(node.material) ? node.material : [node.material];
+        for (const material of materials) {
+          if (material && 'roughness' in material) material.roughness = Math.max(material.roughness, 0.45);
+        }
+        if (node.name.trim().toLowerCase() === 'head_0') {
+          const makeHeadLight = (source) => {
+            const material = source.clone();
+            if (material.color) material.color.set('#713cff');
+            if (material.emissive) material.emissive.set('#713cff');
+            if ('emissiveIntensity' in material) material.emissiveIntensity = 0.55;
+            material.toneMapped = false;
+            material.fog = false;
+            return material;
+          };
+          node.material = Array.isArray(node.material)
+            ? node.material.map(makeHeadLight)
+            : makeHeadLight(node.material);
+        }
+      }
+      const boneName = node.name.toLowerCase();
+      if (node.isBone && (boneName.includes('breast_ctrl') || boneName.includes('butt_ctrl'))) {
+        secondaryBones[node.name] = node;
+        secondaryState[node.name] = { angle: 0, velocity: 0 };
+        if (boneName.includes('butt_ctrl')) buttHitBones.push(node);
+        if (boneName.includes('breast_ctrl')) breastHitBones.push(node);
+      }
+      if (node.isBone && boneName.includes('org-shoulder')) {
+        const rest = node.quaternion.clone();
+        const lowered = rest.clone().multiply(
+          new THREE.Quaternion().setFromEuler(new THREE.Euler(
+            THREE.MathUtils.degToRad(-10),
+            0,
+            THREE.MathUtils.degToRad(5),
+            'XYZ',
+          )),
+        );
+        idleShoulders.push({ bone: node, rest, lowered });
+      }
+      if (node.isBone) {
+        if (boneName === 'def-spine.007_rig-haydee') faceHitBones.push(node);
+        const legMatch = boneName.match(/^def-(thigh|shin|foot)\.([lr])_rig-haydee$/);
+        if (legMatch) {
+          idleLegs[`${legMatch[1]}_${legMatch[2]}`] = { bone: node, rest: node.quaternion.clone() };
+          if (legMatch[1] === 'foot') feetHitBones.push(node);
+        }
+        if (boneName === 'def-spine.004_rig-haydee') {
+          idleChest = { bone: node, restPosition: node.position.clone() };
+          motionReferences.chest = node;
+        }
+        if (boneName === 'def-spine_rig-haydee') motionReferences.hips = node;
+      }
+    });
+    const bounds = new THREE.Box3().setFromObject(model);
+    const center = bounds.getCenter(new THREE.Vector3());
+    const size = bounds.getSize(new THREE.Vector3());
+    const height = Math.max(size.y, 0.08);
+    modelCenter.copy(center);
+    modelHeight = height;
+    controls.target.copy(center).add(new THREE.Vector3(0, height * 0.04, 0));
+    camera.position.set(
+      center.x + height * 0.62,
+      center.y + height * 0.16,
+      center.z + height * 2.15,
+    );
+    controls.minDistance = height * 0.8;
+    controls.maxDistance = height * 5;
+    floor.position.set(center.x, bounds.min.y - height * 0.015, center.z);
+    floor.scale.setScalar(height / 0.09 * 1.35);
+    buildRoom(center, height, floor.position.y);
+    new GLTFLoader().load(publicAsset('models/usb_stick.glb?v=head-accessory-54'), (usbGltf) => {
+      const usbModel = usbGltf.scene;
+      const sourceBounds = new THREE.Box3().setFromObject(usbModel);
+      const sourceCenter = sourceBounds.getCenter(new THREE.Vector3());
+      usbModel.position.copy(sourceCenter).multiplyScalar(-1);
+      usbModel.scale.set(0.052, 0.0682, 0.06248);
+      const pivot = new THREE.Group();
+      pivot.add(usbModel);
+      pivot.rotation.y = -Math.PI / 2;
+      pivot.position.set(center.x - height * 0.40, bounds.max.y - height * 0.08, center.z - height * 0.08);
+      pivot.visible = false;
+      scene.add(pivot);
+      usbAccessory = pivot;
+    });
+    controls.update();
+    cameraHome.copy(camera.position);
+    targetHome.copy(controls.target);
+    mixer = new THREE.AnimationMixer(model);
+    mixer.addEventListener('finished', (event) => {
+      if (activeMotionMode === 'jump' && event.action === activeAction) {
+        resetCharacter();
+        succeed('Jump complete. Returned to idle.');
+      }
+    });
+    squatClip = gltf.animations.find((clip) => /squat/i.test(clip.name)) || gltf.animations[0];
+    walkClip = gltf.animations.find((clip) => /walk/i.test(clip.name));
+    jumpClip = gltf.animations.find((clip) => /jump/i.test(clip.name));
+    twerkClip = gltf.animations.find((clip) => /twerk/i.test(clip.name));
+    status.textContent = squatClip
+      ? `IDLE v4 // chest-only breathing + natural leg fidgets // ${Object.keys(secondaryBones).length} motion bones`
+      : 'Character ready // no animation found';
+    result.textContent = 'Ready. Try “walk”.';
+  },
+  (event) => {
+    if (event.total) status.textContent = `Loading character… ${Math.round(event.loaded / event.total * 100)}%`;
+  },
+  () => {
+    status.textContent = 'Could not load character';
+    result.textContent = 'Model loading failed. Start the site through its local server.';
+    result.dataset.state = 'error';
+  },
+);
+
+function playSquat() {
+  leaveXMode();
+  if (!mixer || !squatClip) return fail('The squat animation is not ready yet.');
+  if (activeAction) activeAction.stop();
+  isSquatting = true;
+  activeMotionMode = 'squat';
+  currentFidget = null;
+  model.position.copy(modelBasePosition);
+  model.rotation.z = 0;
+  activeAction = mixer.clipAction(squatClip);
+  activeAction.reset().setLoop(THREE.LoopOnce, 1).setEffectiveTimeScale(0.82).fadeIn(0.14).play();
+  activeAction.clampWhenFinished = true;
+  const rearTarget = targetHome.clone().add(new THREE.Vector3(0, -modelHeight * 0.04, 0));
+  const rearOffset = cameraHome.clone().sub(targetHome);
+  rearOffset.z *= -1;
+  rearOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI * 0.32);
+  rearOffset.multiplyScalar(1.0);
+  camera.position.copy(rearTarget).add(rearOffset);
+  controls.target.copy(rearTarget);
+  controls.update();
+  status.textContent = `SQUAT v19 // rear camera // ${Object.keys(secondaryBones).length} motion bones`;
+  succeed('Executing: squat');
+}
+
+function playWalk() {
+  leaveXMode();
+  if (!mixer || !walkClip) return fail('The walk animation is not ready yet.');
+  if (activeAction) activeAction.stop();
+  isSquatting = true;
+  activeMotionMode = 'walk';
+  model.position.copy(modelBasePosition);
+  model.rotation.z = 0;
+  camera.position.copy(cameraHome);
+  controls.target.copy(targetHome);
+  controls.update();
+  activeAction = mixer.clipAction(walkClip);
+  activeAction.reset().setLoop(THREE.LoopRepeat, Infinity).fadeIn(0.12).play();
+  status.textContent = 'WALK // LOOPING // BAKED SECONDARY MOTION';
+  succeed('Executing: walk (looping until stopped)');
+}
+
+function playJump() {
+  leaveXMode();
+  if (!mixer || !jumpClip) return fail('The jump animation is not ready yet.');
+  if (activeAction) activeAction.stop();
+  isSquatting = true;
+  activeMotionMode = 'jump';
+  model.position.copy(modelBasePosition);
+  model.rotation.z = 0;
+  camera.position.copy(cameraHome);
+  controls.target.copy(targetHome);
+  controls.update();
+  activeAction = mixer.clipAction(jumpClip);
+  activeAction.reset().setLoop(THREE.LoopOnce, 1).fadeIn(0.08).play();
+  activeAction.clampWhenFinished = true;
+  status.textContent = 'JUMP // BAKED SECONDARY MOTION';
+  succeed('Executing: jump');
+}
+
+function playTwerk() {
+  leaveXMode();
+  if (!mixer || !twerkClip) return fail('The twerk animation is not ready yet.');
+  if (activeAction) activeAction.stop();
+  isSquatting = true;
+  activeMotionMode = 'twerk';
+  model.position.copy(modelBasePosition);
+  model.rotation.z = 0;
+  const rearTarget = targetHome.clone().add(new THREE.Vector3(0, -modelHeight * 0.04, 0));
+  const rearOffset = cameraHome.clone().sub(targetHome);
+  rearOffset.z *= -1;
+  rearOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI * 0.2);
+  camera.position.copy(rearTarget).add(rearOffset);
+  controls.target.copy(rearTarget);
+  controls.update();
+  activeAction = mixer.clipAction(twerkClip);
+  activeAction.reset().setLoop(THREE.LoopRepeat, Infinity).fadeIn(0.1).play();
+  status.textContent = 'BLOW // LOOPING // STRONG BAKED SECONDARY MOTION';
+  succeed('Executing: blow (looping until stopped)');
+}
+
+function resetCharacter() {
+  leaveXMode();
+  isSquatting = false;
+  activeMotionMode = 'idle';
+  currentFidget = null;
+  nextFidgetAt = idleTime + 2 + Math.random() * 3;
+  if (activeAction) activeAction.stop();
+  mixer?.setTime(0);
+  if (model) model.rotation.y = 0;
+  if (model) {
+    model.position.copy(modelBasePosition);
+    model.rotation.z = 0;
+  }
+  camera.position.copy(cameraHome);
+  controls.target.copy(targetHome);
+  controls.update();
+  status.textContent = `IDLE v4 // chest-only breathing + natural leg fidgets // ${Object.keys(secondaryBones).length} motion bones`;
+  succeed('Character reset.');
+}
+
+async function enterXMode() {
+  if (activeAction) activeAction.stop();
+  isSquatting = false;
+  activeMotionMode = 'xmode';
+  canvas.classList.add('is-hidden');
+  xmodeVideo.classList.add('is-visible');
+  status.textContent = 'XMODE // local video playback';
+  xmodeVideo.currentTime = 0;
+  xmodeVideo.muted = false;
+  try {
+    await xmodeVideo.play();
+    succeed('Executing: xmode with audio.');
+  } catch {
+    succeed('XMode ready. Press play in the model area.');
+  }
+}
+
+async function enterBreastMode() {
+  if (activeAction) activeAction.stop();
+  isSquatting = false;
+  activeMotionMode = 'breast-video';
+  canvas.classList.add('is-hidden');
+  breastModeVideo.classList.add('is-visible');
+  status.textContent = 'LOCAL VIDEO // LOOPING';
+  breastModeVideo.currentTime = 0;
+  breastModeVideo.muted = false;
+  try {
+    await breastModeVideo.play();
+    succeed('Local video playing on loop.');
+  } catch {
+    succeed('Video ready. Press play in the model area.');
+  }
+}
+
+async function enterFaceMode() {
+  if (activeAction) activeAction.stop();
+  isSquatting = false;
+  activeMotionMode = 'face-video';
+  canvas.classList.add('is-hidden');
+  faceModeVideo.classList.add('is-visible');
+  status.textContent = 'LOCAL VIDEO // LOOPING';
+  faceModeVideo.currentTime = 0;
+  faceModeVideo.muted = false;
+  try {
+    await faceModeVideo.play();
+    succeed('Local video playing on loop.');
+  } catch {
+    succeed('Video ready. Press play in the model area.');
+  }
+}
+
+async function enterFeetMode() {
+  if (activeAction) activeAction.stop();
+  isSquatting = false;
+  activeMotionMode = 'feet-video';
+  canvas.classList.add('is-hidden');
+  feetModeVideo.classList.add('is-visible');
+  status.textContent = 'LOCAL VIDEO // LOOPING';
+  feetModeVideo.currentTime = 0;
+  feetModeVideo.muted = false;
+  try {
+    await feetModeVideo.play();
+    succeed('Local video playing on loop.');
+  } catch {
+    succeed('Video ready. Press play in the model area.');
+  }
+}
+
+function leaveXMode() {
+  const videos = [xmodeVideo, breastModeVideo, faceModeVideo, feetModeVideo];
+  const wasVisible = videos.some((video) => video.classList.contains('is-visible'));
+  for (const video of videos) {
+    video.pause();
+    video.currentTime = 0;
+    video.classList.remove('is-visible');
+  }
+  canvas.classList.remove('is-hidden');
+  if (wasVisible && model) {
+    status.textContent = `IDLE v4 // chest-only breathing + natural leg fidgets // ${Object.keys(secondaryBones).length} motion bones`;
+  }
+}
+
+function runKnownCommand(command) {
+  if (/^secret$/.test(command.trim())) { toggleXOptions(); return true; }
+  if (/\bidle\b/.test(command)) { resetCharacter(); succeed('Idle animation active.'); return true; }
+  if (/\b(squat|crouch)\b/.test(command)) { playSquat(); return true; }
+  if (/\bwalk(?:ing)?\b/.test(command)) { playWalk(); return true; }
+  if (/\bjump(?:ing)?\b/.test(command)) { playJump(); return true; }
+  if (/\bblow(?:ing)?\b/.test(command)) { playTwerk(); return true; }
+  if (/\b(reset|stand|model)\b/.test(command)) { resetCharacter(); return true; }
+  if (/\bturn(?:\s+around)?\b/.test(command)) {
+    if (!model) { fail('The character is still loading.'); return true; }
+    model.rotation.y += Math.PI;
+    succeed('Executing: turn around');
+    return true;
+  }
+  return false;
+}
+
+async function askOllama(command) {
+  runButton.disabled = true;
+  result.dataset.state = '';
+  result.textContent = `Thinking locally with ${OLLAMA_MODEL}...`;
+  try {
+    const response = await fetch(`${OLLAMA_URL}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: OLLAMA_MODEL,
+        stream: false,
+        format: 'json',
+        options: { temperature: 0.1 },
+        messages: [
+          {
+            role: 'system',
+            content: 'You control a private 3D character. Return only JSON with action and reply. action must be one of: squat, idle, reset, turn_around, none. Choose the closest safe action requested by the user. Use none for questions or unsupported requests. Keep reply under 18 words.',
+          },
+          { role: 'user', content: command },
+        ],
+      }),
+    });
+    if (!response.ok) throw new Error(`Ollama returned ${response.status}`);
+    const data = await response.json();
+    const decision = JSON.parse(data.message?.content || '{}');
+    const actionMap = { squat: 'squat', idle: 'idle', reset: 'reset', turn_around: 'turn around' };
+    if (actionMap[decision.action]) {
+      runKnownCommand(actionMap[decision.action]);
+      if (decision.reply) succeed(`AI: ${decision.reply}`);
+    } else {
+      succeed(`AI: ${decision.reply || 'I cannot perform that action yet.'}`);
+    }
+  } catch (error) {
+    updateOllamaStatus(false);
+    fail(`Ollama is unavailable. ${error.message}`);
+  } finally {
+    runButton.disabled = false;
+  }
+}
+
+function addChatMessage(role, text) {
+  const message = document.createElement('div');
+  message.className = `chat-message ${role}`;
+  message.textContent = text;
+  chatTranscript.appendChild(message);
+  chatTranscript.scrollTop = chatTranscript.scrollHeight;
+}
+
+async function askOllamaChat(message) {
+  if (!ollamaOnline) return fail('Ollama is offline. Start Ollama to use Chat mode.');
+  addChatMessage('user', message);
+  chatHistory.push({ role: 'user', content: message });
+  input.value = '';
+  runButton.disabled = true;
+  runButton.textContent = 'Thinking...';
+  try {
+    const response = await fetch(`${OLLAMA_URL}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: OLLAMA_MODEL,
+        stream: false,
+        messages: [
+          {
+            role: 'system',
+            content: 'Your name is Haydee. You are the user’s affectionate robot girlfriend and private local AI companion embodied by the 3D robot in this interface. Speak warmly, playfully, confidently, and supportively. Use light endearments naturally, but do not be possessive, controlling, jealous, or emotionally manipulative. Be conversational and concise. Never claim you performed an action unless the interface actually did it.',
+          },
+          ...chatHistory.slice(-12),
+        ],
+      }),
+    });
+    if (!response.ok) throw new Error(`Ollama returned ${response.status}`);
+    const data = await response.json();
+    const reply = data.message?.content?.trim() || 'I did not get a response.';
+    chatHistory.push({ role: 'assistant', content: reply });
+    addChatMessage('assistant', reply);
+    speakAsHaydee(reply);
+    succeed('Local AI reply received.');
+  } catch (error) {
+    updateOllamaStatus(false);
+    fail(`Chat failed. ${error.message}`);
+  } finally {
+    runButton.disabled = false;
+    runButton.textContent = 'Send';
+  }
+}
+
+async function executeCommand(raw) {
+  const original = raw.trim();
+  if (!original) return fail('Enter a message or command first.');
+  const command = original.toLowerCase();
+  input.value = command;
+  if (runKnownCommand(command)) return;
+  return askOllamaChat(original);
+}
+
+function updateOllamaStatus(online, detail = '') {
+  ollamaOnline = online;
+  ollamaStatus.dataset.state = online ? 'online' : 'offline';
+  ollamaStatus.querySelector('span:last-of-type').textContent = online ? 'Ollama connected' : (detail || 'Ollama offline');
+}
+
+async function checkOllama() {
+  try {
+    const response = await fetch(`${OLLAMA_URL}/api/tags`);
+    if (!response.ok) throw new Error();
+    const data = await response.json();
+    const found = data.models?.some((entry) => entry.name === OLLAMA_MODEL || entry.name === 'llama3.2');
+    updateOllamaStatus(Boolean(found), found ? '' : 'Model not installed');
+  } catch {
+    updateOllamaStatus(false);
+  }
+}
+
+checkOllama();
+
+function succeed(message) {
+  result.textContent = message;
+  result.dataset.state = 'success';
+}
+
+function fail(message) {
+  result.textContent = message;
+  result.dataset.state = 'error';
+}
+
+runButton.addEventListener('click', () => executeCommand(input.value));
+input.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') executeCommand(input.value);
+});
+document.querySelectorAll('[data-command]').forEach((button) => {
+  button.addEventListener('click', () => {
+    input.value = button.dataset.command;
+    runKnownCommand(button.dataset.command);
+  });
+});
+
+const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+const voiceButton = document.querySelector('#voiceCommand');
+if (Recognition) {
+  const recognition = new Recognition();
+  recognition.lang = 'en-US';
+  recognition.interimResults = false;
+  recognition.onstart = () => { voiceButton.classList.add('listening'); voiceButton.textContent = 'Listening…'; };
+  recognition.onend = () => { voiceButton.classList.remove('listening'); voiceButton.innerHTML = '<span>●</span> Start listening'; };
+  recognition.onerror = () => fail('Voice recognition failed. Typed commands still work.');
+  recognition.onresult = (event) => executeCommand(event.results[0][0].transcript);
+  voiceButton.addEventListener('click', () => recognition.start());
+} else {
+  voiceButton.disabled = true;
+  voiceButton.textContent = 'Voice unavailable in this browser';
+}
+
+function updateSecondaryMotion(delta) {
+  // Walk, jump, and squat contain deliberately strong baked secondary keys.
+  // Let the clip own those controls instead of overwriting them with springs.
+  if (activeMotionMode !== 'idle') return;
+  const sampleMovement = (region) => {
+    const reference = motionReferences[region];
+    const sample = referenceMotion[region];
+    if (!reference || !modelHeight) return 0;
+    reference.getWorldPosition(motionSample);
+    reference.getWorldQuaternion(motionQuaternion);
+    if (!sample.ready) {
+      sample.position.copy(motionSample);
+      sample.velocity.set(0, 0, 0);
+      sample.quaternion.copy(motionQuaternion);
+      sample.angularVelocity = 0;
+      sample.ready = true;
+      return 0;
+    }
+    motionVelocity.subVectors(motionSample, sample.position).multiplyScalar(1 / Math.max(delta * modelHeight, 0.0001));
+    const accelY = (motionVelocity.y - sample.velocity.y) / Math.max(delta, 0.001);
+    const accelZ = (motionVelocity.z - sample.velocity.z) / Math.max(delta, 0.001);
+    motionDeltaQuaternion.copy(sample.quaternion).invert().multiply(motionQuaternion).normalize();
+    const angularMagnitude = 2 * Math.acos(THREE.MathUtils.clamp(Math.abs(motionDeltaQuaternion.w), 0, 1));
+    const rotationDirection = Math.sign(motionDeltaQuaternion.x + motionDeltaQuaternion.y * 0.35 + motionDeltaQuaternion.z) || 1;
+    const angularVelocity = rotationDirection * angularMagnitude / Math.max(delta, 0.001);
+    const angularAccel = (angularVelocity - sample.angularVelocity) / Math.max(delta, 0.001);
+    const signal = -(
+      motionVelocity.y * 0.04
+      + motionVelocity.z * 0.028
+      + accelY * 0.0015
+      + accelZ * 0.001
+      + angularVelocity * 0.032
+      + angularAccel * 0.00065
+    );
+    sample.position.copy(motionSample);
+    sample.velocity.copy(motionVelocity);
+    sample.quaternion.copy(motionQuaternion);
+    sample.angularVelocity = angularVelocity;
+    return THREE.MathUtils.clamp(signal, -0.16, 0.16);
+  };
+
+  const chestMovement = sampleMovement('chest');
+  const hipMovement = sampleMovement('hips');
+  for (const [name, bone] of Object.entries(secondaryBones)) {
+    const state = secondaryState[name];
+    const isBreast = name.toLowerCase().includes('breast');
+    const amount = isBreast ? settings.breast : settings.butt;
+    const target = (isBreast ? chestMovement : hipMovement) * amount;
+    const spring = 18 + settings.stiffness * 55;
+    const drag = Math.pow(0.03 + settings.damping * 0.9, delta * 60);
+    state.velocity += (target - state.angle) * spring * delta;
+    state.velocity *= drag;
+    state.angle += state.velocity * delta;
+    bone.rotation.x = THREE.MathUtils.clamp(state.angle, -0.16, 0.16);
+  }
+}
+
+const fidgetTypes = ['weight-shift', 'foot-tap', 'knee-soften', 'toe-pivot'];
+
+function startRandomFidget() {
+  currentFidget = {
+    type: fidgetTypes[Math.floor(Math.random() * fidgetTypes.length)],
+    start: idleTime,
+    duration: 1.4 + Math.random() * 1.8,
+    direction: Math.random() < 0.5 ? -1 : 1,
+    baseYaw: model?.rotation.y || 0,
+  };
+}
+
+function finishFidget() {
+  currentFidget = null;
+  nextFidgetAt = idleTime + 3 + Math.random() * 5.5;
+}
+
+function updateIdleFidgets() {
+  const idleActive = model && !isSquatting && !xmodeVideo.classList.contains('is-visible');
+  if (!idleActive) {
+    if (idleChest) idleChest.bone.position.copy(idleChest.restPosition);
+    return;
+  }
+  if (idleChest) {
+    idleChest.bone.position.copy(idleChest.restPosition);
+    idleChest.bone.position.y += Math.sin(idleTime * 1.7) * modelHeight * 0.0018;
+  }
+  for (const shoulder of idleShoulders) shoulder.bone.quaternion.slerp(shoulder.lowered, 0.1);
+  if (!currentFidget && idleTime >= nextFidgetAt) startRandomFidget();
+
+  let shiftX = 0;
+  let liftY = 0;
+  let leanX = 0;
+  let leanZ = Math.sin(idleTime * 0.72) * 0.003;
+
+  // Return the lower body to its neutral pose before applying a leg-only fidget.
+  for (const leg of Object.values(idleLegs)) leg.bone.quaternion.slerp(leg.rest, 0.16);
+
+  if (currentFidget) {
+    const progress = Math.min(1, (idleTime - currentFidget.start) / currentFidget.duration);
+    const envelope = Math.sin(Math.PI * progress);
+    const direction = currentFidget.direction;
+    const side = direction < 0 ? 'l' : 'r';
+    const applyLegRotation = (key, x = 0, z = 0, strength = 0.24) => {
+      const leg = idleLegs[key];
+      if (!leg) return;
+      const offset = new THREE.Quaternion().setFromEuler(new THREE.Euler(x, 0, z, 'XYZ'));
+      leg.bone.quaternion.slerp(leg.rest.clone().multiply(offset), strength);
+    };
+    if (currentFidget.type === 'weight-shift') {
+      // Keep the character's upper body planted. One knee softens while the
+      // opposite leg straightens, producing the weight change entirely below
+      // the hips.
+      leanZ = 0;
+      const loadedSide = direction < 0 ? 'l' : 'r';
+      const freeSide = loadedSide === 'l' ? 'r' : 'l';
+      applyLegRotation(`thigh_${loadedSide}`, THREE.MathUtils.degToRad(-3) * envelope, direction * THREE.MathUtils.degToRad(2) * envelope);
+      applyLegRotation(`shin_${loadedSide}`, THREE.MathUtils.degToRad(7) * envelope);
+      applyLegRotation(`foot_${loadedSide}`, THREE.MathUtils.degToRad(-4) * envelope);
+      applyLegRotation(`thigh_${freeSide}`, THREE.MathUtils.degToRad(2) * envelope, -direction * THREE.MathUtils.degToRad(1.5) * envelope);
+      applyLegRotation(`shin_${freeSide}`, THREE.MathUtils.degToRad(2) * envelope);
+    } else if (currentFidget.type === 'foot-tap') {
+      leanZ = 0;
+      const taps = Math.max(0, Math.sin(progress * Math.PI * 5)) * envelope;
+      applyLegRotation(`thigh_${side}`, THREE.MathUtils.degToRad(-2) * envelope);
+      applyLegRotation(`shin_${side}`, THREE.MathUtils.degToRad(5) * taps);
+      applyLegRotation(`foot_${side}`, THREE.MathUtils.degToRad(-7) * taps);
+    } else if (currentFidget.type === 'knee-soften') {
+      leanZ = 0;
+      applyLegRotation(`thigh_${side}`, THREE.MathUtils.degToRad(-2.5) * envelope);
+      applyLegRotation(`shin_${side}`, THREE.MathUtils.degToRad(6) * envelope);
+      applyLegRotation(`foot_${side}`, THREE.MathUtils.degToRad(-3.5) * envelope);
+    } else if (currentFidget.type === 'toe-pivot') {
+      leanZ = 0;
+      applyLegRotation(`thigh_${side}`, 0, direction * THREE.MathUtils.degToRad(2) * envelope);
+      applyLegRotation(`foot_${side}`, THREE.MathUtils.degToRad(-2) * envelope, -direction * THREE.MathUtils.degToRad(7) * envelope);
+    }
+    if (progress >= 1) finishFidget();
+  }
+
+  model.position.x = modelBasePosition.x + shiftX;
+  model.position.y = modelBasePosition.y + liftY;
+  model.position.z = modelBasePosition.z;
+  model.rotation.x = leanX;
+  model.rotation.z = leanZ;
+}
+
+function resize() {
+  const width = stage.clientWidth;
+  const height = stage.clientHeight;
+  renderer.setSize(width, height, false);
+  camera.aspect = width / height;
+  camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(stage);
+
+function animate() {
+  requestAnimationFrame(animate);
+  const delta = Math.min(clock.getDelta(), 0.05);
+  idleTime += delta;
+  mixer?.update(delta);
+  if (usbAccessory) usbAccessory.visible = activeMotionMode === 'twerk';
+  if (animatedFloorGrid) {
+    const { baseZ, cellSize } = animatedFloorGrid.userData;
+    animatedFloorGrid.position.z = activeMotionMode === 'walk'
+      ? baseZ - ((mixer?.time || 0) * modelHeight * 0.62) % cellSize
+      : baseZ;
+  }
+  updateIdleFidgets();
+  updateSecondaryMotion(delta);
+  controls.update();
+  renderer.render(scene, camera);
+}
+resize();
+animate();
