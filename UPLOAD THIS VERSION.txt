@@ -1,0 +1,21 @@
+HAYDEE WEBSITE - RASPBERRY PI OPTIMIZED
+
+Upload every file and folder here to the root of the GitHub repository.
+Allow GitHub to replace the existing index.html and matching files.
+
+Required structure:
+
+index.html
+assets/
+media/
+models/
+
+The website automatically enables Pi Lite Mode on ARM devices and devices
+reporting 4 GB of memory or less.
+
+Optional URL controls:
+
+?lite=1         Force low-memory rendering mode.
+?quality=full   Force the original 2048-texture model.
+
+For best Raspberry Pi results, use Chromium and append ?lite=1 to the site URL.
