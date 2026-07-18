@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#090b12" />
+    <title>Haydee Videos</title>
+    <style>
+      :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #090b12; color: #fff; }
+      * { box-sizing: border-box; }
+      body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 50% 35%, #20194a, #090b12 60%); }
+      main { min-height: 100vh; display: grid; place-items: center; padding: 22px; }
+      .picker { width: min(680px, 100%); display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+      button { min-height: 84px; border: 1px solid #514785; border-radius: 16px; color: #fff; background: linear-gradient(145deg, #302667, #5a3c91); font: 700 18px system-ui, sans-serif; cursor: pointer; box-shadow: 0 14px 34px rgba(0,0,0,.28); }
+      button:hover, button:focus-visible { outline: none; border-color: #a58cff; background: linear-gradient(145deg, #44358b, #704db1); }
+      .picker button:last-child { grid-column: 1 / -1; }
+      .player { display: none; position: fixed; inset: 0; z-index: 2; background: #030407; }
+      .player.is-visible { display: grid; place-items: center; }
+      video { width: 100%; height: 100%; object-fit: contain; }
+      .back { position: fixed; z-index: 3; top: 16px; right: 16px; min-height: 0; padding: 10px 14px; border-radius: 10px; font-size: 13px; }
+      .status { grid-column: 1 / -1; min-height: 20px; margin: 2px 0 0; color: #aeb7ca; text-align: center; font: 12px ui-monospace, monospace; }
+      @media (max-width: 560px) {
+        .picker { grid-template-columns: 1fr; }
+        .picker button:last-child { grid-column: auto; }
+        button { min-height: 68px; }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="picker" aria-label="Video selection">
+        <button data-video="../media/xmode.mp4?v=3">Video 1</button>
+        <button data-video="../media/breast-click-loop.mp4?v=3">Video 2</button>
+        <button data-video="../media/face-click-loop.mp4?v=3">Video 3</button>
+        <button data-video="../media/feet-click-loop.mp4?v=3">Video 4</button>
+        <button data-video="../media/hands-click-loop.mp4?v=1">Hands</button>
+        <p class="status" aria-live="polite">Select a video.</p>
+      </section>
+      <section class="player" aria-label="Video player">
+        <video controls loop playsinline preload="none"></video>
+        <button class="back" type="button">Back</button>
+      </section>
+    </main>
+    <script>
+      const picker = document.querySelector('.picker');
+      const player = document.querySelector('.player');
+      const video = document.querySelector('video');
+      const status = document.querySelector('.status');
+      const back = document.querySelector('.back');
+
+      async function playVideo(source) {
+        status.textContent = 'Loading video…';
+        video.pause();
+        video.src = source;
+        video.preload = 'auto';
+        video.load();
+        player.classList.add('is-visible');
+        try {
+          video.muted = false;
+          await video.play();
+        } catch {
+          try {
+            video.muted = true;
+            await video.play();
+            video.muted = false;
+          } catch {
+            status.textContent = 'Video loaded. Press play.';
+          }
+        }
+      }
+
+      picker.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-video]');
+        if (button) playVideo(button.dataset.video);
+      });
+      video.addEventListener('canplay', () => { status.textContent = 'Ready.'; });
+      video.addEventListener('error', () => {
+        status.textContent = 'Video failed to load. Check the connection and try again.';
+      });
+      back.addEventListener('click', () => {
+        video.pause();
+        video.removeAttribute('src');
+        video.load();
+        player.classList.remove('is-visible');
+        status.textContent = 'Select a video.';
+      });
+    </script>
+  </body>
+</html>

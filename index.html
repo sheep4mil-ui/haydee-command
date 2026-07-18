@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#090b12" />
     <title>Haydee Command Deck</title>
-    <script type="module" crossorigin src="./assets/index-5-Ui6LLm.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-CbYO0Mj8.css">
+    <script type="module" crossorigin src="./assets/index-BTySaWnS.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-DH1uaSrO.css">
   </head>
   <body class="is-locked">
     <section id="startupLock" class="startup-lock" aria-label="Startup passcode">
@@ -33,19 +33,9 @@
         <video id="feetModeVideo" class="xmode-video" preload="none" playsinline controls loop>
           <source src="./media/feet-click-loop.mp4?v=2" type="video/mp4" />
         </video>
-        <section id="piVideoPicker" class="pi-video-picker" aria-label="Pi mode video selection">
-          <p class="eyebrow">PI MODE // VIDEO DECK</p>
-          <h2>Select a video</h2>
-          <p>The 3D model is disabled to save memory.</p>
-          <div class="pi-video-grid">
-            <button data-pi-video="xmode">XMode</button>
-            <button data-pi-video="breast">Video 2</button>
-            <button data-pi-video="face">Video 3</button>
-            <button data-pi-video="feet">Video 4</button>
-          </div>
-          <small>Type “normal mode” to restore the 3D model.</small>
-        </section>
-        <button id="piVideoBack" class="pi-video-back">Back to videos</button>
+        <video id="handsModeVideo" class="xmode-video" preload="none" playsinline controls loop>
+          <source src="./media/hands-click-loop.mp4?v=1" type="video/mp4" />
+        </video>
         <div class="brand">
           <span class="signal"></span>
           <span>LOCAL // HAYDEE-01</span>
@@ -57,7 +47,7 @@
         <header>
           <p class="eyebrow">Private command interface</p>
           <h1>Haydee<br />Command Deck</h1>
-          <p class="intro">Type or speak a command. Say “pi” for the lightweight video-only mode.</p>
+          <p class="intro">Type or speak a command. The character loads only when requested.</p>
         </header>
 
         <section class="command-card">
